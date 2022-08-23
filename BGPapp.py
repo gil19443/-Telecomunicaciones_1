@@ -26,6 +26,10 @@ import requests
 import numpy as np
 import BGPplay #esqueleto de la interfaz utilizada
 cambio = 0 #variable global para registrar los cambios en el tiempo
+respuesta = {}
+cambios = {}
+changes = []
+original = []
 class master (QtWidgets.QMainWindow, Ui_MainWindow,QWidget):
     def __init__ (self):
         super(master,self).__init__()
@@ -39,14 +43,15 @@ class master (QtWidgets.QMainWindow, Ui_MainWindow,QWidget):
 
         self.show()#se muestran los graficos
         self.textEdit.setText('181.174.107.0/24')
-        self.textEdit_2.setText('174')
-        self.textEdit_3.setText('07:00:00')
-        self.textEdit_4.setText('12:00:00')
+        self.textEdit_2.setText('134823')
+        self.textEdit_3.setText('23:42:56')
+        self.textEdit_4.setText('23:58:25')
         self.textEdit_5.setText('2022-08-14')
         self.textEdit_6.setText('2022-08-14') #se colocan las condiciones iniciales de los elementos de la interfaz
         self.showMaximized()#Funcion para que la interfaz se abra en pantalla completa
         self.pushButton.clicked.connect(self.graph)#callback function del boton
         self.pushButton_2.clicked.connect(self.changes)#callback function del boton 2
+        self.pushButton_3.clicked.connect(self.filtrar)#callback function del boton 3
         self.update()#actualizar valores
 
     def graph(self):
@@ -104,8 +109,70 @@ class master (QtWidgets.QMainWindow, Ui_MainWindow,QWidget):
 
     def changes(self):
         self.figure.clf()
+        global original
+        global changes
+        global cambio
+        paths = []
+        x = []
+        y = []
+        edges = []
+        index = 0
+        color = []
+        final = {}
+        temp_state = []
+        final_state = {}
+
+        if (cambio < (len(changes)-1)):
+            cambio = cambio +1
+        else:
+            cambio = 0
+            #se muestra los eventos dispoibles
+        self.label_7.setText('E:{0}/{1}'.format(cambio,len(changes)))
+        #se revisa si ASN final coincide con evento para remplazarlo
+        for i in range(len(original)):
+            if (int(original[i][0])==int(changes[cambio][0])):
+                print(original[i])
+                original[i]=changes[cambio]
+
+        if (len(original)!=0):
+            #se filtran las rutas que poseen el AS ingreasado por le usuario
+            for i in range(len(original)):
+                for j in range(len(original[i])):
+                    if (int(original[i][j])==int(self.textEdit_2.toPlainText())):
+                        temp_state.append(original[i])
+            if (len(temp_state)==0):
+                temp_state.append("nada que mostrar")
+                temp_state.append(self.textEdit_2.toPlainText())
+            else: #mismo proceso para graficar que el que se describio anteriormente
+                for i in range(len(temp_state)):
+                    for j in range(len(temp_state[i])-1):
+                        y.append(temp_state[i][len(temp_state[i])-2-j])
+                        x.append(temp_state[i][len(temp_state[i])-j-1])
+                G = nx.Graph()
+                edges = list(zip(x,y))
+                G.add_edges_from(edges)
+                for i in range(G.number_of_nodes()):
+                    if (i==0):
+                        color.append("red")
+                    else:
+                        color.append('lightblue')
+                pos = nx.spring_layout(G,k=0.045,seed = 123456)
+                nx.draw(G, pos , with_labels = True, width=0.4,node_color=color, node_size=1000)
+        else:
+            self.figure.clf()
+            G = nx.Graph()
+            G.add_edges_from([("no hay rutas para mostrar de",self.textEdit.toPlainText())])
+            pos = nx.spring_layout(G,k=0.045,seed = 123456)
+            nx.draw(G, pos , with_labels = True, width=0.4,node_color="red", node_size=1000)
+        self.canvas.draw_idle()
+
+    def filtrar(self):
+        self.figure.clf()
         #se establecen las variables que se van a utilizar
         global cambio
+        global respuesta
+        global original
+        global changes
         paths = []
         changes=[]
         x = []
@@ -119,45 +186,29 @@ class master (QtWidgets.QMainWindow, Ui_MainWindow,QWidget):
         final_state = {}
         url = 'https://stat.ripe.net/data/bgplay/data.json?resource={0}&starttime={3}T{1}&endtime={4}T{2}'.format(self.textEdit.toPlainText(),self.textEdit_3.toPlainText(),self.textEdit_4.toPlainText(),self.textEdit_5.toPlainText(),self.textEdit_6.toPlainText())
         print(url)
-        resp = requests.get(url)
-        #se guardan todos los cambiso registrados en el intervalo ingresado
-        for i in range(len(resp.json()['data']['events'])):
-            if (len(resp.json()['data']['events'][i]["attrs"])>2):
-                paths.append(resp.json()['data']['events'][i]["attrs"]['path'])
-        #se revisa que si se hayan guardado cambios
-        if (len(paths)!=0):
-            for i in range(len(paths)):
-                for j in range(len(paths[i])):
-                    #se revisaa si hay una coincidencia con el AS ingresado por el usuario
-                    if (int(paths[i][j])==int(self.textEdit_2.toPlainText())):
-                        print(paths[i])
-                        #se almacenan los paths desde el AS de origen hasta el AS de coincidencia
-                        for k in range(len(paths[i])-paths[i].index(paths[i][j])):
-                            changes.append(paths[i][len(paths[i])-k-1])
-            print(changes)
-            #se revisa que si hayan habido coincidencias
-            if (len(changes)!=0):
-                changes1 = np.array(changes)
-                #se bucan las ubicaciones del AS de origen en el arreglo general para separarlo por paths individuales
-                ubi = np.where(changes1 == paths[0][len(paths[0])-1])
-                #se coloca el numero de paths registrados en la interfaz
-                self.label_7.setText('Eventos: {}'.format(len(ubi[0])))
-                #se guardan en el diccionario las rutas individuales
-                for i in range(len(ubi[0])):
-                    if (i==(len(ubi[0])-1)):
-                        final[i] = changes[ubi[0][i]:]
-                    else:
-                        final[i] = changes[ubi[0][i]:ubi[0][i+1]]
-                #se verifica que el valor del cambio no exceda la cantidad de eventos registrados
-                if (cambio < (len(ubi[0])-1)):
-                    cambio = cambio +1
-                else:
-                    cambio = 0
-                #se arman los arreglos con los puntos
-                for j in range(len(final[cambio])-1):
-                    y.append(final[cambio][j+1])
-                    x.append(final[cambio][j])
-                #para graficar, mismo proceso que el anterior
+        respuesta = requests.get(url).json()
+        #se guarda el estado inicial de cada ruta
+        for i in range(len(respuesta['data']['initial_state'])):
+            if (len(respuesta['data']['initial_state'][i]["path"])!=0):
+                original.append(respuesta['data']['initial_state'][i]["path"])
+        #se guardan los cambios en el intervalo
+        for i in range(len(respuesta['data']['events'])):
+            if (len(respuesta['data']['events'][i]["attrs"])>2):
+                changes.append(respuesta['data']['events'][i]["attrs"]['path'])
+                #se grafica el estado inicial de las rutas que incluye el ASN ingresado por el usuario
+        if (len(original)!=0):
+            for i in range(len(original)):
+                for j in range(len(original[i])):
+                    if (int(original[i][j])==int(self.textEdit_2.toPlainText())):
+                        temp_state.append(original[i])
+            if (len(temp_state)==0):
+                temp_state.append("nada que mostrar")
+                temp_state.append(self.textEdit_2.toPlainText())
+            else:
+                for i in range(len(temp_state)):
+                    for j in range(len(temp_state[i])-1):
+                        y.append(temp_state[i][len(temp_state[i])-2-j])
+                        x.append(temp_state[i][len(temp_state[i])-j-1])
                 G = nx.Graph()
                 edges = list(zip(x,y))
                 G.add_edges_from(edges)
@@ -168,116 +219,12 @@ class master (QtWidgets.QMainWindow, Ui_MainWindow,QWidget):
                         color.append('lightblue')
                 pos = nx.spring_layout(G,k=0.045,seed = 123456)
                 nx.draw(G, pos , with_labels = True, width=0.4,node_color=color, node_size=1000)
-            else:
-                #en caso que no hubieran coincidencias con los cambios, se buscan en en otra ubicacion
-                #para graficar el estado inicial
-                #se registran los paths del estado inicial
-                for i in range(len(resp.json()['data']['initial_state'])):
-                    if (len(resp.json()['data']['initial_state'][i]["path"])!=0):
-                        original.append(resp.json()['data']['initial_state'][i]["path"])
-                #se revisa que hayan paths registrados
-                if (len(original)!=0):
-                    for i in range(len(original)):
-                        for j in range(len(original[i])):
-                            if (int(original[i][j])==int(self.textEdit_2.toPlainText())):
-                                for k in range(len(original[i])-original[i].index(original[i][j])):
-                                    temp_state.append(original[i][len(original[i])-k-1])
-                    #se revisa que hayan coincidencias con el AS ingresado por el usuario
-                    if (len(temp_state)==0):
-                        temp_state.append("nada que mostrar")
-                        temp_state.append(self.textEdit_2.toPlainText())
-                    else:
-                        #si hubieron coincidencias, mismo proceso que el descrito anteriormente
-                        print(temp_state)
-                        temp1 = np.array(temp_state)
-                        ubi2 = np.where(temp1 == original[0][len(original[0])-1])
-                        print(len(ubi2[0]))
-                        self.label_7.setText('Eventos: {}'.format(len(ubi2[0])))
-                        for i in range(len(ubi2[0])):
-                            if (i==(len(ubi2[0])-1)):
-                                final_state[i] = temp_state[ubi2[0][i]:]
-                            else:
-                                final_state[i] = temp_state[ubi2[0][i]:ubi2[0][i+1]]
-                        print(final_state)
-                        print(cambio)
-                        if (cambio < (len(ubi2[0])-1)):
-                            cambio = cambio +1
-                        else:
-                            cambio = 0
-                        for j in range(len(final_state[cambio])-1):
-                            y.append(final_state[cambio][j+1])
-                            x.append(final_state[cambio][j])
-                    #para graficar, lo mismo que se realizo en los ciclos anteriores
-                    G = nx.Graph()
-                    edges = list(zip(x,y))
-                    print(edges)
-                    G.add_edges_from(edges)
-                    print(G)
-                    for i in range(G.number_of_nodes()):
-                        if (i==0):
-                            color.append("red")
-                        else:
-                            color.append('lightblue')
-                    pos = nx.spring_layout(G,k=0.045,seed = 123456)
-                    nx.draw(G, pos , with_labels = True, width=0.4,node_color=color, node_size=1000)
-                else:
-                    self.figure.clf()
-                    G = nx.Graph()
-                    G.add_edges_from([("no hay rutas para mostrar de",self.textEdit.toPlainText())])
-                    pos = nx.spring_layout(G,k=0.045,seed = 123456)
-                    nx.draw(G, pos , with_labels = True, width=0.4,node_color="red", node_size=1000)
         else:
-            #si no hay cambios, tambien se bucann paths en el estado iniciales
-            #se realiza lo descrito anterioremente
-            for i in range(len(resp.json()['data']['initial_state'])):
-                if (len(resp.json()['data']['initial_state'][i]["path"])!=0):
-                    original.append(resp.json()['data']['initial_state'][i]["path"])
-            if (len(original)!=0):
-                for i in range(len(original)):
-                    for j in range(len(original[i])):
-                        if (int(original[i][j])==int(self.textEdit_2.toPlainText())):
-                            print(original[i])
-                            for k in range(len(original[i])-original[i].index(original[i][j])):
-                                temp_state.append(original[i][len(original[i])-k-1])
-                if (len(temp_state)==0):
-                    temp_state.append("nada que mostrar")
-                    temp_state.append(self.textEdit_2.toPlainText())
-                else:
-                    temp1 = np.array(temp_state)
-                    ubi2 = np.where(temp1 == original[0][len(original[0])-1])
-                    self.label_7.setText('Eventos: {}'.format(len(ubi2[0])))
-                    for i in range(len(ubi2[0])):
-                        if (i==(len(ubi2[0])-1)):
-                            final_state[i] = temp_state[ubi2[0][i]:]
-                        else:
-                            final_state[i] = temp_state[ubi2[0][i]:ubi2[0][i+1]]
-
-                    if (cambio < (len(ubi2[0])-1)):
-                        cambio = cambio +1
-                    else:
-                        cambio = 0
-                    for j in range(len(final_state[cambio])-1):
-                        y.append(final_state[cambio][j+1])
-                        x.append(final_state[cambio][j])
-
-                    G = nx.Graph()
-                    edges = list(zip(x,y))
-                    print(edges)
-                    G.add_edges_from(edges)
-                    print(G)
-                    for i in range(G.number_of_nodes()):
-                        if (i==0):
-                            color.append("red")
-                        else:
-                            color.append('lightblue')
-                    pos = nx.spring_layout(G,k=0.045,seed = 123456)
-                    nx.draw(G, pos , with_labels = True, width=0.4,node_color=color, node_size=1000)
-            else:
-                self.figure.clf()
-                G = nx.Graph()
-                G.add_edges_from([("no hay rutas para mostrar de",self.textEdit.toPlainText())])
-                pos = nx.spring_layout(G,k=0.045,seed = 123456)
-                nx.draw(G, pos , with_labels = True, width=0.4,node_color="red", node_size=1000)
+            self.figure.clf()
+            G = nx.Graph()
+            G.add_edges_from([("no hay rutas para mostrar de",self.textEdit.toPlainText())])
+            pos = nx.spring_layout(G,k=0.045,seed = 123456)
+            nx.draw(G, pos , with_labels = True, width=0.4,node_color="red", node_size=1000)
         self.canvas.draw_idle()
 
 aplication = QtWidgets.QApplication([])
